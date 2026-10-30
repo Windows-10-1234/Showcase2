@@ -1,0 +1,182 @@
+local TS = game:GetService("TweenService")
+local MissionModule = require(script.Parent.Missions.Config)
+local CreditsModule = require(script.Parent.Credits.Config)
+local CameraShake = require(game:GetService('ReplicatedStorage'):WaitForChild('CameraModule'))
+local MissionMainModule = require(script.Parent.MainModules.Mission)
+
+local CameraPos = workspace.CameraPos
+local currCam = workspace.CurrentCamera
+local Player = game:GetService("Players").LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local Animations = game:GetService("ReplicatedStorage"):WaitForChild("Animations")
+local cam = workspace.CurrentCamera
+local pos = workspace:WaitForChild("CharZoomPos")
+local gui = script.Parent.Parent.Darkening
+local Party = game:GetService('ReplicatedStorage'):WaitForChild('Remotes'):WaitForChild("Party")
+local partygui = script.Parent.Parent.PartyGUI
+local interGUI = script.Parent.Parent.InterGUI
+
+function setMenuRig()
+	local Rig = workspace:WaitForChild("Rig_Anim_Menu")
+	local rigHum = Rig:WaitForChild("Humanoid")
+	local idleAnim = Animations.MenuRig:WaitForChild("Idle")
+	local actionAnim = Animations.MenuRig:WaitForChild("Action")
+	local idleTrack = rigHum:LoadAnimation(idleAnim)
+	local actionTrack = rigHum:LoadAnimation(actionAnim)
+	idleTrack.Looped = true
+	idleTrack:Play()
+	task.spawn(function()
+		while true do
+			task.wait(20)
+			if idleTrack.IsPlaying then idleTrack:Stop() end
+			actionTrack:Play()
+			actionTrack.Stopped:Wait()
+			if not idleTrack.IsPlaying then idleTrack:Play() end
+		end
+	end)
+end
+
+function playMusic()
+	local musicFolder = workspace.Sounds.Music
+	local played = {}
+
+	local function getTrack(i)
+		return musicFolder:FindFirstChild(tostring(i))
+	end
+
+	local function getRandomIndex()
+		if #played >= 5 then played = {} end
+		local i
+		repeat
+			i = math.random(1, 5)
+		until not table.find(played, i)
+		table.insert(played, i)
+		return i
+	end
+
+	local function playNext()
+		local track = getTrack(getRandomIndex())
+		if not track then return end
+		track:Play()
+		track.Ended:Wait()
+		playNext()
+	end
+
+	task.spawn(playNext)
+end
+
+function setCameraMenu()
+	currCam.CameraType = Enum.CameraType.Scriptable
+	currCam.CameraSubject = CameraPos
+	currCam.CFrame = CameraPos.CFrame
+	Character:WaitForChild("HumanoidRootPart").Anchored = true
+	Character:WaitForChild("Humanoid").WalkSpeed = 0
+	Character:WaitForChild("Humanoid").JumpPower = 0
+end
+
+function Init()
+	MissionModule:Init()
+	CreditsModule:Init()
+	setCameraMenu()
+	setMenuRig()
+	playMusic()
+	CameraShake:Start(CameraPos.CFrame)
+	game:GetService('StarterGui'):SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+	game.Lighting.Brightness = 3
+end
+
+Party.OnClientEvent:Connect(function(action, data)
+	if action == "Joined" then
+		print('fired joined')
+		local code = data.code
+		local party = data.party
+		for _, v in pairs(partygui.Players:GetChildren()) do
+			if v:IsA("Frame") then v:Destroy() end
+		end
+		for _, name in ipairs(party.Players) do
+			local template = script.Player:Clone()
+			template.username.Text = name
+			template.Name = name
+			template.Kick.Visible = false
+			template.Parent = partygui.Players
+		end
+		partygui.Enabled = true
+		partygui.Start.Visible = false
+		partygui.Leave.Visible = true
+		interGUI.Enabled = false
+
+	elseif action == "HostStatus" then
+		print('fired hoststatus')
+		partygui.Start.Visible = data.isHost
+		for _, v in pairs(partygui.Players:GetChildren()) do
+			if v:IsA("Frame") then
+				v.Kick.Visible = data.isHost and v.Name ~= Player.Name
+			end
+		end
+
+	elseif action == "PlayerJoined" then
+		print('fired playerjoined')
+		local playerName = data.playerName
+		local party = data.party
+		local template = script.Player:Clone()
+		template.username.Text = playerName
+		template.Name = playerName
+		template.Kick.Visible = Player.UserId == party.HostID
+		template.Parent = partygui.Players
+		template.Kick.TextButton.Activated:Connect(function()
+			Party:FireServer(playerName, "Kick")
+		end)
+
+	elseif action == "Left" then
+		print('fired left')
+		partygui.Enabled = false
+		for _, v in pairs(partygui.Players:GetChildren()) do
+			if v:IsA("Frame") then v:Destroy() end
+		end
+
+	elseif action == "PlayerLeft" then
+		print('fired leftplayer')
+		local playerName = data.playerName
+		local target = partygui.Players:FindFirstChild(playerName)
+		if target then target:Destroy() end
+
+	elseif action == "Disbanded" then
+		partygui.Enabled = false
+		for _, v in pairs(partygui.Players:GetChildren()) do
+			if v:IsA("Frame") then v:Destroy() end
+		end
+
+	elseif action == "Kicked" then
+		partygui.Enabled = false
+		interGUI.Enabled = true
+		for _, v in pairs(partygui.Players:GetChildren()) do
+			if v:IsA("Frame") then v:Destroy() end
+		end
+		workspace.Sounds.Error:Play()
+
+	elseif action == "Error" then
+		local message = data.message
+		workspace.Sounds.Error:Play()
+		print(data)
+
+	elseif action == "PartyListed" then
+		local code = data.code
+		local party = data.party
+		local partyCard = script.Party:Clone()
+		partyCard.Name = code
+		partyCard.Parent = interGUI.Parties
+		partyCard.Host.Text = game:GetService('Players'):GetPlayerByUserId(party.HostID) and game:GetService('Players'):GetPlayerByUserId(party.HostID).Name or "Unknown"
+		partyCard.Mission.Text = party.Mission or "Unknown Mission"
+		partyCard.Count.Text = "[" .. #party.Players .. "/4]"
+		partyCard.Button.Activated:Connect(function()
+			Party:FireServer(code, "Join")
+		end)
+
+	elseif action == "PartyRemoved" then
+		local code = data.code
+		local card = interGUI.Parties:FindFirstChild(code)
+		if card then card:Destroy() end
+	end
+end)
+
+Init()
