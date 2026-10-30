@@ -1,0 +1,63 @@
+task.wait(.2)
+
+local module = {}
+local TS = game:GetService("TweenService")
+local cam = workspace.CurrentCamera
+local pos = workspace:WaitForChild("CharZoomPos")
+local gui = script.Parent.Parent.Parent.Darkening
+local camshake = require(game:GetService('ReplicatedStorage'):WaitForChild("CameraModule"))
+local Party = game:GetService('ReplicatedStorage'):WaitForChild('Remotes'):WaitForChild("Party")
+local partygui = script.Parent.Parent.Parent.PartyGUI
+local interGUI = script.Parent.Parent.Parent.InterGUI
+
+local bound = false
+local currentMission = nil
+
+function module:MissionClick(Mission)
+	if currentMission then
+		Party:FireServer(nil, "Leave")
+	end
+	currentMission = Mission
+	camshake:Stop()
+	cam.CameraType = Enum.CameraType.Scriptable
+	cam.CameraSubject = pos
+	cam.CFrame = workspace:WaitForChild("CameraPos").CFrame
+	workspace.Sounds.Woosh:Play()
+	TS:Create(cam, TweenInfo.new(.5), {CFrame = pos.CFrame}):Play()
+	TS:Create(gui.Frame, TweenInfo.new(.5), {BackgroundTransparency = 0}):Play()
+	task.wait(.5)
+	interGUI.Enabled = true
+
+	if bound then return end
+	bound = true
+
+	interGUI.Leave.Activated:Connect(function()
+		--if not interGUI.Enabled then return end
+		currentMission = nil
+		--Party:FireServer(nil, "Leave")
+		cam.CameraType = Enum.CameraType.Scriptable
+		cam.CameraSubject = workspace:WaitForChild('CameraPos')
+		cam.CFrame = workspace:WaitForChild('CameraPos').CFrame
+		interGUI.Enabled = false
+		camshake:Start(cam.CFrame)
+		TS:Create(gui.Frame, TweenInfo.new(.2), {BackgroundTransparency = 1}):Play()
+	end)
+
+	interGUI.Host.Activated:Connect(function()
+		if not interGUI.Enabled or not currentMission then return end
+		Party:FireServer(currentMission, "Create")
+		print('fired create')
+	end)
+	
+	partygui.Leave.Activated:Connect(function()
+		currentMission = nil
+		Party:FireServer(currentMission, "Leave")
+		interGUI.Enabled = true
+	end)
+	
+	partygui.Start.Activated:Connect(function()
+		Party:FireServer(nil, "Start")
+	end)
+end
+
+return module
